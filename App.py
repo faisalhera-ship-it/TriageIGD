@@ -4,18 +4,17 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+from streamlit_drawable_canvas import st_canvas
+from PIL import Image, ImageDraw
 
-# Konfigurasi Halaman Streamlit
+# ==========================================
+# 1. KONFIGURASI HALAMAN & UTILS
+# ==========================================
 st.set_page_config(
     page_title="Triage IGD - Puskesmas Tirta Jaya",
     page_icon="🏥",
     layout="wide"
 )
-
-# Header Aplikasi
-st.title("🏥 Sistem Triage & Screening IGD")
-st.subheader("Puskesmas Tirta Jaya")
-st.markdown("---")
 
 # Inisialisasi Session State
 if "daftar_triage" not in st.session_state:
@@ -24,7 +23,36 @@ if "daftar_triage" not in st.session_state:
 if "pasien_terakhir" not in st.session_state:
     st.session_state.pasien_terakhir = None
 
-# Sidebar - Form Input Pasien
+# Fungsi untuk membuat gambar background sketsa anatomi tubuh
+@st.cache_data
+def get_body_outline_image():
+    img = Image.new('RGBA', (320, 380), (248, 250, 252, 255))
+    draw = ImageDraw.Draw(img)
+    color = (70, 80, 95, 255)
+    width = 2
+    
+    # Kepala
+    draw.ellipse([135, 15, 185, 65], outline=color, width=width)
+    # Leher & Badan
+    draw.line([(140, 65), (130, 85), (125, 195), (195, 195), (190, 85), (180, 65)], fill=color, width=width)
+    # Tangan Kiri & Kanan
+    draw.line([(130, 85), (95, 160), (85, 230)], fill=color, width=width)
+    draw.line([(190, 85), (225, 160), (235, 230)], fill=color, width=width)
+    # Kaki Kiri & Kanan
+    draw.line([(140, 195), (135, 280), (130, 360)], fill=color, width=width)
+    draw.line([(180, 195), (185, 280), (190, 360)], fill=color, width=width)
+    return img
+
+# ==========================================
+# 2. HEADER APLIKASI
+# ==========================================
+st.title("🏥 Sistem Triage & Screening IGD")
+st.subheader("Puskesmas Tirta Jaya")
+st.markdown("---")
+
+# ==========================================
+# 3. SIDEBAR FORM INPUT PASIEN
+# ==========================================
 st.sidebar.header("📋 Form Screening Pasien")
 
 with st.sidebar.form("form_triage", clear_on_submit=False):
@@ -59,9 +87,7 @@ with st.sidebar.form("form_triage", clear_on_submit=False):
     st.write("**Kondisi Khusus & Red Flags**")
     
     sesak_napas = st.checkbox("Pasien Mengalami Sesak Napas")
-    
     organ_target = st.checkbox("Ada Kerusakan Organ Target (Nyeri Dada Hebat / Stroke Akut / Pandangan Kabur Mendadak)")
-    
     syok_or_tik = st.checkbox("Ada Tanda Syok (Akral Dingin, Nadi Lemah/Cepat) ATAU Tanda Peningkatan TIK (Muntah Menyembur, Pupil Anisokor)")
     
     if jenis_kasus == "Trauma":
@@ -80,10 +106,46 @@ with st.sidebar.form("form_triage", clear_on_submit=False):
     
     submit_btn = st.form_submit_button("Simpan & Tentukan Kategori")
 
-# Logika Determinasi Triage Berdasarkan Aturan Khusus
-def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, sesak_napas, organ_target, syok_or_tik, kondisi_spesifik):
+# ==========================================
+# 4. SKETSA ANATOMI (STATUS LOKALIS TRAUMA)
+# ==========================================
+status_lokalis_text = "-"
+
+if jenis_kasus == "Trauma":
+    st.markdown("### 🩺 Pemetaan Luka (Status Lokalis Trauma)")
+    col_canvas, col_text = st.columns([1, 1])
     
-    # 1. KRITERIA MERAH (Resusitasi / Immediate)
+    with col_canvas:
+        st.write(" Coret/Tandai lokasi luka pada sketsa tubuh:")
+        stroke_color = st.color_picker("Warna Pen Coretan:", "#FF0000")
+        stroke_width = st.slider("Ketebalan Pen:", 1, 10, 3)
+        
+        bg_image = get_body_outline_image()
+        
+        st_canvas(
+            fill_color="rgba(255, 165, 0, 0.3)",
+            stroke_width=stroke_width,
+            stroke_color=stroke_color,
+            background_image=bg_image,
+            height=380,
+            width=320,
+            drawing_mode="freedraw",
+            key="canvas_trauma",
+        )
+    
+    with col_text:
+        st.write("**Deskripsi Status Lokalis (Luka):**")
+        status_lokalis_text = st.text_area(
+            "Tuliskan rincian luka (Regio, jenis luka, ukuran, deformitas, vulnus, dll.):",
+            placeholder="Contoh: Regio Femur Sinistra: Terdapat vulnus laceratum ukuran 4x1 cm, perdarahan aktif minimal, edema (+).",
+            height=280
+        )
+
+# ==========================================
+# 5. LOGIKA DETERMINASI TRIAGE
+# ==========================================
+def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, sesak_napas, organ_target, syok_or_tik, kondisi_spesifik):
+    # Kriteria Merah (Resusitasi / Immediate)
     if (
         sesak_napas or 
         syok_or_tik or 
@@ -96,7 +158,7 @@ def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, 
     ):
         return "MERAH (Gawat Darurat / Immediate)", "🔴", "Priority 1 - Segera Masuk Ruang Resusitasi", "#FFD2D2"
     
-    # 2. KRITERIA KUNING (Emergensi / Urgent)
+    # Kriteria Kuning (Emergensi / Urgent)
     elif (
         jenis_kasus == "Trauma" or 
         (sistol > 170 and diastol > 90 and not organ_target) or 
@@ -107,14 +169,18 @@ def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, 
     ):
         return "KUNING (Emergensi / Urgent)", "🟡", "Priority 2 - Penanganan < 15 Menit", "#FFF3CD"
     
-    # 3. KRITERIA HIJAU (Non-Emergensi / Normal)
+    # Kriteria Hijau (Non-Emergensi / Normal)
     else:
         return "HIJAU (Non-Emergensi / Normal)", "🟢", "Priority 3 - Poliklinik / Rawat Jalan", "#D4EDDA"
 
-# Fungsi untuk Membentuk URL Google Form Pre-fill
+# Helper Function Google Form Pre-fill
 def build_google_form_url(pt):
     base_url = "https://docs.google.com/forms/d/e/1FAIpQLSdQnkh0fPuAESftoiFKNY6ZiMsCz7HEgddMktFn3cU2ObnHow/viewform"
     
+    deskripsi_lengkap = pt["Keluhan"]
+    if pt["Kasus"] == "Trauma" and pt["Status Lokalis"] != "-":
+        deskripsi_lengkap += f" | [Status Lokalis: {pt['Status Lokalis']}]"
+        
     params = {
         "usp": "pp_url",
         "entry.1527605882": pt["Nama"],
@@ -126,7 +192,7 @@ def build_google_form_url(pt):
         "entry.1677807563": pt["Kesadaran"],
         "entry.934574142": pt["Kategori Triage"],
         "entry.1332083877": pt["Instruksi"],
-        "entry.476498570": pt["Keluhan"]
+        "entry.476498570": deskripsi_lengkap
     }
     
     return f"{base_url}?{urllib.parse.urlencode(params)}"
@@ -153,6 +219,7 @@ if submit_btn:
             "SpO2": f"{spo2}%",
             "TD": f"{sistol}/{diastol} mmHg",
             "Nyeri": nyeri,
+            "Status Lokalis": status_lokalis_text if jenis_kasus == "Trauma" else "-",
             "Kategori Triage": f"{emoji} {kategori}",
             "Instruksi": instruksi,
             "Keluhan": keluhan_utama,
@@ -163,7 +230,9 @@ if submit_btn:
         st.session_state.pasien_terakhir = pasien_data
         st.sidebar.success(f"Pasien {nama} ({jenis_kasus}) berhasil diproses!")
 
-# Tampilan Utama
+# ==========================================
+# 6. TAMPILAN UTAMA (REKAP, GOOGLE FORM, PRINT, DATA TABLE)
+# ==========================================
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -223,6 +292,7 @@ with col1:
                     <tr><td><b>Nama Pasien</b></td><td>{pt['Nama']}</td></tr>
                     <tr><td><b>Umur / Gender</b></td><td>{pt['Umur']} Tahun / {pt['JK']}</td></tr>
                     <tr><td><b>Jenis Kasus</b></td><td><b>{pt['Kasus']}</b> ({pt['Detail Kondisi']})</td></tr>
+                    <tr><td><b>Status Lokalis (Luka)</b></td><td>{pt['Status Lokalis']}</td></tr>
                     <tr><td><b>Tingkat Kesadaran</b></td><td>{pt['Kesadaran']}</td></tr>
                     <tr><td><b>Jalan Napas (Airway)</b></td><td>{pt['Airway']}</td></tr>
                     <tr><td><b>Tanda Vital</b></td><td>SpO2: {pt['SpO2']} | TD: {pt['TD']} | Nyeri: {pt['Nyeri']}/10</td></tr>
@@ -234,7 +304,7 @@ with col1:
         </body>
         </html>
         """
-        components.html(html_print, height=450, scrolling=True)
+        components.html(html_print, height=480, scrolling=True)
     else:
         st.caption("Submit pasien terlebih dahulu untuk mencetak lembar triage.")
 
@@ -242,7 +312,8 @@ with col2:
     st.subheader("📋 Daftar Antrean & Status Triage IGD")
     if st.session_state.daftar_triage:
         df_display = pd.DataFrame(st.session_state.daftar_triage)
-        cols_to_show = ['Waktu', 'Nama', 'Umur', 'Kasus', 'Kategori Triage', 'Instruksi', 'Keluhan']
+        cols_to_show = ['Waktu', 'Nama', 'Umur', 'Kasus', 'Status Lokalis', 'Kategori Triage', 'Instruksi', 'Keluhan']
         st.dataframe(df_display[cols_to_show], use_container_width=True, height=500)
     else:
         st.write("Silakan isi form di sebelah kiri untuk melakukan screening pasien baru.")
+        
