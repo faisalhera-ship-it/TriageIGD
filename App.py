@@ -58,11 +58,11 @@ with st.sidebar.form("form_triage", clear_on_submit=False):
     
     sesak_napas = st.checkbox("Pasien Mengalami Sesak Napas")
     
-    # Checkbox Kerusakan Organ Target (Hipertensi Emergensi)
-     organ_target = st.checkbox("Ada Kerusakan Organ Target (Nyeri Dada Hebat / Stroke Akut / Pandangan Kabur Mendadak)")
+    # Checkbox Kerusakan Organ Target (Dibenarkan Indentasinya)
+    organ_target = st.checkbox("Ada Kerusakan Organ Target (Nyeri Dada Hebat / Stroke Akut / Pandangan Kabur Mendadak)")
     
-    # Checkbox Syok atau Peningkatan TIK
-     syok_or_tik = st.checkbox("Ada Tanda Syok (Akral Dingin, Nadi Lemah/Cepat) ATAU Tanda Peningkatan TIK (Muntah Menyembur, Pupil Anisokor)")
+    # Checkbox Syok atau Peningkatan TIK (Dibenarkan Indentasinya)
+    syok_or_tik = st.checkbox("Ada Tanda Syok (Akral Dingin, Nadi Lemah/Cepat) ATAU Tanda Peningkatan TIK (Muntah Menyembur, Pupil Anisokor)")
     
     if jenis_kasus == "Trauma":
         kondisi_spesifik = st.selectbox("Tingkat Keparahan Trauma", [
@@ -97,11 +97,10 @@ def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, 
         return "MERAH (Gawat Darurat / Immediate)", "🔴", "Priority 1 - Segera Masuk Ruang Resusitasi", "#FFD2D2"
     
     # 2. KRITERIA KUNING (Emergensi / Urgent)
-    # Catatan: Semua trauma yang bukan merah otomatis masuk ke Kuning
     elif (
         jenis_kasus == "Trauma" or 
         (sistol > 170 and diastol > 90 and not organ_target) or 
-        (sistol > 140 or sistol < 90 or spo2 < 95) or  # Tanda vital tidak normal
+        (sistol > 140 or sistol < 90 or spo2 < 95) or 
         "Somnolen" in kesadaran or 
         "Parsial" in jalan_napas or 
         "Keluhan Sedang" in kondisi_spesifik
