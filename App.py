@@ -1,7 +1,6 @@
-import io
-import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+import urllib.parse
 from datetime import datetime
 
 # Konfigurasi Halaman Streamlit
@@ -32,11 +31,10 @@ with st.sidebar.form("form_triage", clear_on_submit=False):
     gender = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
     
     st.markdown("---")
-    # Pilihan Kasus: Trauma vs Non-Trauma
     jenis_kasus = st.radio("Kategori Kasus", ["Non-Trauma", "Trauma"], horizontal=True)
     
     st.markdown("---")
-    st.write("**Pemeriksaan Tanda Vital & Kondisi Fisik**")
+    st.write("**Pemeriksaan Tanda Vital & Gejala Klinis**")
     
     kesadaran = st.selectbox("Tingkat Kesadaran", [
         "Compos Mentis (Sadar Penuh)", 
@@ -51,57 +49,97 @@ with st.sidebar.form("form_triage", clear_on_submit=False):
     ])
     
     sistol = st.number_input("Sistol (mmHg)", value=120)
+    diastol = st.number_input("Diastol (mmHg)", value=80)
     spo2 = st.number_input("Saturasi Oksigen / SpO2 (%)", value=98)
     nyeri = st.slider("Skala Nyeri (0 - 10)", 0, 10, 0)
     
-    # Input Spesifik Berdasarkan Kategori Kasus
+    st.markdown("---")
+    st.write("**Kondisi Khusus & Red Flags**")
+    
+    sesak_napas = st.checkbox("Pasien Mengalami Sesak Napas")
+    
+    # Checkbox Kerusakan Organ Target (Hipertensi Emergensi)
+     organ_target = st.checkbox("Ada Kerusakan Organ Target (Nyeri Dada Hebat / Stroke Akut / Pandangan Kabur Mendadak)")
+    
+    # Checkbox Syok atau Peningkatan TIK
+     syok_or_tik = st.checkbox("Ada Tanda Syok (Akral Dingin, Nadi Lemah/Cepat) ATAU Tanda Peningkatan TIK (Muntah Menyembur, Pupil Anisokor)")
+    
     if jenis_kasus == "Trauma":
-        kondisi_spesifik = st.selectbox("Kondisi Trauma", [
-            "Luka Ringan / Lecet / Memar Lokal",
-            "Patah Tulang Tertutup (Ekstremitas) / Perdarahan Terkontrol",
-            "Perdarahan Masif / Trauma Kepala Berat / Patah Tulang Terbuka / Amputasi / Luka Bakar Luas (>20%)"
+        kondisi_spesifik = st.selectbox("Tingkat Keparahan Trauma", [
+            "Trauma Sedang / Ringan (Patah Tulang Tertutup, Dislokasi, Perdarahan Terkontrol)",
+            "Trauma Berat (Perdarahan Masif, Trauma Kepala Berat, Patah Tulang Terbuka, Amputasi, Luka Bakar Luas)"
         ])
     else:
         kondisi_spesifik = st.selectbox("Kondisi Klinis Non-Trauma", [
-            "Keluhan Ringan (Batuk, Pilek, Demam Ringan)",
-            "Nyeri Sedang / Sesak Sedang / Hipertensi / Vomiting Berulang",
-            "Henti Jantung / Nyeri Dada Typic (ACS) / Kejang Berulang / Sesak Berat / Stroke Akut"
+            "Keluhan Ringan / Stabil",
+            "Keluhan Sedang (Demam Tinggi, Nyeri Sedang, Vomiting)",
+            "Kondisi Kritis (Henti Jantung, Kejang Berulang, Unstable)"
         ])
     
     keluhan_utama = st.text_area("Keluhan Utama / Catatan Klinis")
     
     submit_btn = st.form_submit_button("Simpan & Tentukan Kategori")
 
-# Logika Determinasi Triage (Trauma & Non-Trauma)
-def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, spo2, kondisi_spesifik):
-    # Kriteria Merah (Resusitasi/Immediate)
-    if ("Koma" in kesadaran or 
+# Logika Determinasi Triage Berdasarkan Aturan Khusus
+def tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, sesak_napas, organ_target, syok_or_tik, kondisi_spesifik):
+    
+    # 1. KRITERIA MERAH (Resusitasi / Immediate)
+    if (
+        sesak_napas or 
+        syok_or_tik or 
+        (sistol > 170 and diastol > 90 and organ_target) or 
+        "Koma" in kesadaran or 
         "Sumbatan Total" in jalan_napas or 
-        spo2 < 85 or 
+        spo2 < 88 or 
         sistol < 80 or 
-        "Perdarahan Masif" in kondisi_spesifik or 
-        "Henti Jantung" in kondisi_spesifik):
+        (jenis_kasus == "Trauma" and "Trauma Berat" in kondisi_spesifik)
+    ):
         return "MERAH (Gawat Darurat / Immediate)", "🔴", "Priority 1 - Segera Masuk Ruang Resusitasi", "#FFD2D2"
     
-    # Kriteria Kuning (Emergensi/Urgent)
-    elif ("Somnolen" in kesadaran or 
-          "Parsial" in jalan_napas or 
-          spo2 < 93 or 
-          sistol > 180 or 
-          sistol < 90 or 
-          "Patah Tulang Tertutup" in kondisi_spesifik or 
-          "Nyeri Sedang" in kondisi_spesifik):
-        return "KUNING (Emergensi / Urgent)", "🟡", "Priority 2 - Penanganan Tindakan < 15 Menit", "#FFF3CD"
+    # 2. KRITERIA KUNING (Emergensi / Urgent)
+    # Catatan: Semua trauma yang bukan merah otomatis masuk ke Kuning
+    elif (
+        jenis_kasus == "Trauma" or 
+        (sistol > 170 and diastol > 90 and not organ_target) or 
+        (sistol > 140 or sistol < 90 or spo2 < 95) or  # Tanda vital tidak normal
+        "Somnolen" in kesadaran or 
+        "Parsial" in jalan_napas or 
+        "Keluhan Sedang" in kondisi_spesifik
+    ):
+        return "KUNING (Emergensi / Urgent)", "🟡", "Priority 2 - Penanganan < 15 Menit", "#FFF3CD"
     
-    # Kriteria Hijau (Non-Emergensi/Biasa)
+    # 3. KRITERIA HIJAU (Non-Emergensi / Normal)
     else:
         return "HIJAU (Non-Emergensi / Normal)", "🟢", "Priority 3 - Poliklinik / Rawat Jalan", "#D4EDDA"
+
+# Fungsi untuk Membentuk URL Google Form Pre-fill
+def build_google_form_url(pt):
+    base_url = "https://docs.google.com/forms/d/e/1FAIpQLSdQnkh0fPuAESftoiFKNY6ZiMsCz7HEgddMktFn3cU2ObnHow/viewform"
+    
+    params = {
+        "usp": "pp_url",
+        "entry.1527605882": pt["Nama"],
+        "entry.227822657": str(pt["Umur"]),
+        "entry.687964026": pt["JK"],
+        "entry.1182390189": pt["Kasus"],
+        "entry.1889333283": pt["TD"],
+        "entry.1397973064": pt["SpO2"],
+        "entry.1677807563": pt["Kesadaran"],
+        "entry.934574142": pt["Kategori Triage"],
+        "entry.1332083877": pt["Instruksi"],
+        "entry.476498570": pt["Keluhan"]
+    }
+    
+    return f"{base_url}?{urllib.parse.urlencode(params)}"
 
 if submit_btn:
     if not nama:
         st.sidebar.error("Nama pasien harus diisi!")
     else:
-        kategori, emoji, instruksi, bg_color = tentukan_triage(jenis_kasus, kesadaran, jalan_napas, sistol, spo2, kondisi_spesifik)
+        kategori, emoji, instruksi, bg_color = tentukan_triage(
+            jenis_kasus, kesadaran, jalan_napas, sistol, diastol, spo2, 
+            sesak_napas, organ_target, syok_or_tik, kondisi_spesifik
+        )
         waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         pasien_data = {
@@ -114,7 +152,7 @@ if submit_btn:
             "Kesadaran": kesadaran,
             "Airway": jalan_napas,
             "SpO2": f"{spo2}%",
-            "Sistol": f"{sistol} mmHg",
+            "TD": f"{sistol}/{diastol} mmHg",
             "Nyeri": nyeri,
             "Kategori Triage": f"{emoji} {kategori}",
             "Instruksi": instruksi,
@@ -124,21 +162,13 @@ if submit_btn:
         
         st.session_state.daftar_triage.insert(0, pasien_data)
         st.session_state.pasien_terakhir = pasien_data
-        st.sidebar.success(f"Pasien {nama} ({jenis_kasus}) berhasil ditambahkan!")
-
-# Helper Function Excel Export
-def to_excel(df):
-    output = io.BytesIO()
-    df_clean = df.drop(columns=['BgColor'], errors='ignore')
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_clean.to_excel(writer, index=False, sheet_name='Data_Triage_IGD')
-    return output.getvalue()
+        st.sidebar.success(f"Pasien {nama} ({jenis_kasus}) berhasil diproses!")
 
 # Tampilan Utama
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.subheader("📊 Rekapitulasi Hari Ini")
+    st.subheader("📊 Rekapitulasi Pasien")
     if st.session_state.daftar_triage:
         df = pd.DataFrame(st.session_state.daftar_triage)
         merah = df['Kategori Triage'].str.contains('MERAH').sum()
@@ -151,15 +181,18 @@ with col1:
         c3.metric("🟢 Hijau", hijau)
         
         st.markdown("---")
-        st.subheader("📥 Export Data Excel")
-        excel_data = to_excel(df)
-        st.download_button(
-            label="📊 Download Excel (.xlsx)",
-            data=excel_data,
-            file_name=f"Triage_IGD_TirtaJaya_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+        st.subheader("📝 Kirim Data ke Google Form")
+        if st.session_state.pasien_terakhir:
+            pt = st.session_state.pasien_terakhir
+            gform_url = build_google_form_url(pt)
+            
+            st.link_button(
+                label="📤 Submit Pasien Terakhir ke Google Form",
+                url=gform_url,
+                type="primary",
+                use_container_width=True
+            )
+            st.caption("Data pasien terakhir akan otomatis terisi ke dalam Google Form Puskesmas Tirta Jaya.")
     else:
         st.info("Belum ada data pasien.")
 
@@ -193,7 +226,7 @@ with col1:
                     <tr><td><b>Jenis Kasus</b></td><td><b>{pt['Kasus']}</b> ({pt['Detail Kondisi']})</td></tr>
                     <tr><td><b>Tingkat Kesadaran</b></td><td>{pt['Kesadaran']}</td></tr>
                     <tr><td><b>Jalan Napas (Airway)</b></td><td>{pt['Airway']}</td></tr>
-                    <tr><td><b>Tanda Vital</b></td><td>SpO2: {pt['SpO2']} | TD: {pt['Sistol']} | Nyeri: {pt['Nyeri']}/10</td></tr>
+                    <tr><td><b>Tanda Vital</b></td><td>SpO2: {pt['SpO2']} | TD: {pt['TD']} | Nyeri: {pt['Nyeri']}/10</td></tr>
                     <tr><td><b>Instruksi Tindakan</b></td><td><b>{pt['Instruksi']}</b></td></tr>
                     <tr><td><b>Keluhan Utama</b></td><td>{pt['Keluhan']}</td></tr>
                 </table>
