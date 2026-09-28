@@ -1,7 +1,9 @@
-import streamlit as st
-import streamlit.components.v1 as components
+import io
 import urllib.parse
 from datetime import datetime
+import pandas as pd
+import streamlit as st
+import streamlit.components.v1 as components
 
 # Konfigurasi Halaman Streamlit
 st.set_page_config(
@@ -58,10 +60,8 @@ with st.sidebar.form("form_triage", clear_on_submit=False):
     
     sesak_napas = st.checkbox("Pasien Mengalami Sesak Napas")
     
-    # Checkbox Kerusakan Organ Target (Dibenarkan Indentasinya)
     organ_target = st.checkbox("Ada Kerusakan Organ Target (Nyeri Dada Hebat / Stroke Akut / Pandangan Kabur Mendadak)")
     
-    # Checkbox Syok atau Peningkatan TIK (Dibenarkan Indentasinya)
     syok_or_tik = st.checkbox("Ada Tanda Syok (Akral Dingin, Nadi Lemah/Cepat) ATAU Tanda Peningkatan TIK (Muntah Menyembur, Pupil Anisokor)")
     
     if jenis_kasus == "Trauma":
